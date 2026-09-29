@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Experiences Bot · Extremo Oeste</title>
+
+<style>
+
+body {
+  margin: 0;
+  background: #0F0F10;
+  font-family: 'Inter', sans-serif;
+}
+
+.bot-toggle {
+  position: fixed;
+  bottom: 100px;
+  right: 25px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #f44061;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  z-index: 9998;
+  transition: .3s;
+}
+.bot-toggle:hover {
+  transform: scale(1.1);
+  background: #ef2a86;
+}
+
+.bot-widget {
+  position: fixed;
+  bottom: 170px;
+  right: 25px;
+  width: 360px;
+  height: 500px;
+  background: #1E1F22;
+  border-radius: 16px;
+  display: none;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  z-index: 9997;
+  border: 1px solid rgba(194,168,120,0.2);
+  overflow: hidden;
+}
+
+.bot-widget.open {
+  display: flex;
+}
+
+.bot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #B35C3A;
+  color: white;
+}
+
+.bot-header-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bot-avatar {
+  font-size: 1.5rem;
+}
+
+.bot-header strong {
+  display: block;
+  font-size: .95rem;
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 1px;
+}
+
+.bot-header small {
+  font-size: .75rem;
+  opacity: .85;
+}
+
+.bot-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.bot-messages {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bot-msg {
+  max-width: 82%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: .88rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.bot-msg.bot {
+  background: #2a2b2f;
+  color: #EDE8E1;
+  align-self: flex-start;
+}
+
+.bot-msg.user {
+  background: #B35C3A;
+  color: white;
+  align-self: flex-end;
+}
+
+.bot-msg.typing {
+  background: #2a2b2f;
+  color: #888;
+  font-style: italic;
+  align-self: flex-start;
+}
+
+.bot-input-area {
+  display: flex;
+  padding: 12px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  gap: 8px;
+}
+
+.bot-input-area input {
+  flex: 1;
+  min-width: 0;
+  background: #2a2b2f;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #EDE8E1;
+  font-size: 16px; /* 16px evita el zoom automático de iPhone al tocar el input */
+  outline: none;
+}
+
+.bot-input-area input::placeholder {
+  color: #666;
+}
+
+.bot-input-area button {
+  background: #C2A878;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #0F0F10;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.bot-input-area button:hover {
+  background: #d4bc90;
+}
+
+.bot-whatsapp-cta {
+  position: fixed;
+  bottom: 170px;
+  right: 400px;
+  z-index: 9999;
+}
+
+.bot-whatsapp-cta a {
+  display: block;
+  background: #25D366;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 12px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: .9rem;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+/* Móvil: el chat ocupa toda la pantalla */
+@media (max-width: 480px) {
+  .bot-widget {
+    inset: 0;
+    width: 100%;
+    height: 100vh;   /* respaldo para navegadores antiguos */
+    height: 100dvh;
+    border-radius: 0;
+    border: none;
+  }
+  .bot-whatsapp-cta {
+    left: 15px;
+    right: 15px;
+    bottom: 80px;
+    text-align: center;
+  }
+  /* oculta el botón flotante mientras el chat está abierto */
+  body.chat-open .bot-toggle {
+    display: none;
+  }
+}
+
+</style>
+</head>
+
+<body>
+
+<!-- Chat Button -->
+<button class="bot-toggle" id="bot-toggle" onclick="toggleChat()">
+  💬
+</button>
+
+<!-- Chat Widget -->
+<div class="bot-widget" id="bot-widget">
+
+  <div class="bot-header">
+    <div class="bot-header-info">
+      <span class="bot-avatar">🗺</span>
+      <div>
+        <strong>Experiences Bot</strong>
+        <small>Extremo Oeste · Lima</small>
+      </div>
+    </div>
+    <button class="bot-close" onclick="toggleChat()">×</button>
+  </div>
+
+  <div class="bot-messages" id="bot-messages"></div>
+
+  <div class="bot-input-area">
+    <input
+      id="bot-input"
+      type="text"
+      placeholder="Ask about our experiences..."
+      onkeydown="if(event.key==='Enter') botSend()"
+    >
+    <button onclick="botSend()">→</button>
+  </div>
+
+</div>
+
+<!-- WhatsApp CTA (shown on hot lead) -->
+<div class="bot-whatsapp-cta" id="bot-whatsapp-cta" style="display:none">
+  <a href="https://wa.me/51999156493?text=Hi,%20I%20would%20like%20to%20book%20an%20experience%20with%20Extremo%20Oeste"
+     target="_blank">
+    📲 Book now via WhatsApp
+  </a>
+</div>
+
+<script>
+
+const WORKER_URL = "https://experience-ai.limaexpiriences.workers.dev/";
+
+let botConversation = [];
+let chatOpen = false;
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  const widget = document.getElementById('bot-widget');
+  widget.classList.toggle('open', chatOpen);
+  document.body.classList.toggle('chat-open', chatOpen);
+
+  if (!chatOpen) {
+    document.getElementById('bot-whatsapp-cta').style.display = 'none';
+  }
+
+  if (chatOpen && botConversation.length === 0) {
+    setTimeout(() => {
+      addBotMessage("Hi! I'm the Experiences Bot 🗺\n\nI can help you discover Lima through the eyes of a local. Which type of experience interests you — history, gastronomy, nature, or something custom?");
+    }, 400);
+  }
+}
+
+function addBotMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'bot-msg bot';
+  div.textContent = text;
+  document.getElementById('bot-messages').appendChild(div);
+  scrollBot();
+}
+
+function addUserMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'bot-msg user';
+  div.textContent = text;
+  document.getElementById('bot-messages').appendChild(div);
+  scrollBot();
+}
+
+function addTyping() {
+  const div = document.createElement('div');
+  div.className = 'bot-msg typing';
+  div.id = 'bot-typing';
+  div.textContent = 'Writing...';
+  document.getElementById('bot-messages').appendChild(div);
+  scrollBot();
+}
+
+function scrollBot() {
+  const msgs = document.getElementById('bot-messages');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function botSend() {
+  const input = document.getElementById('bot-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  addUserMessage(text);
+  botConversation.push({ role: "user", content: text });
+  input.value = "";
+
+  addTyping();
+
+  try {
+    const response = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: botConversation })
+    });
+
+    const data = await response.json();
+
+    document.getElementById('bot-typing')?.remove();
+
+    let reply = data.reply;
+    const isHotLead = data.isHotLead;
+
+    // Remove WhatsApp CTA tag from visible message
+    const showWhatsApp = reply.includes('[WHATSAPP_CTA]');
+    reply = reply.replace('[WHATSAPP_CTA]', '').trim();
+
+    botConversation.push({ role: "assistant", content: reply });
+    addBotMessage(reply);
+
+    // Show WhatsApp CTA button if hot lead or bot triggered it
+    if (showWhatsApp || isHotLead) {
+      document.getElementById('bot-whatsapp-cta').style.display = 'block';
+    }
+
+  } catch (error) {
+    document.getElementById('bot-typing')?.remove();
+    addBotMessage("Sorry, I'm having trouble connecting. Please contact us directly via WhatsApp.");
+  }
+}
+
+</script>
+
+</body>
+</html>
