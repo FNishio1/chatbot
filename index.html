@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Experiences Bot · Extremo Oeste</title>
+<meta name="robots" content="noindex">
 
 <style>
 
@@ -130,6 +131,31 @@ body {
   align-self: flex-start;
 }
 
+/* Botones de respuesta rápida */
+.bot-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-self: flex-start;
+}
+
+.bot-chips button {
+  background: transparent;
+  color: #C2A878;
+  border: 1px solid #C2A878;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: .85rem;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.bot-chips button:hover,
+.bot-chips button:active {
+  background: #C2A878;
+  color: #0F0F10;
+}
+
 .bot-input-area {
   display: flex;
   padding: 12px;
@@ -167,6 +193,12 @@ body {
 
 .bot-input-area button:hover {
   background: #d4bc90;
+}
+
+.bot-input-area button:disabled,
+.bot-input-area input:disabled {
+  opacity: .5;
+  cursor: not-allowed;
 }
 
 .bot-whatsapp-cta {
@@ -222,7 +254,7 @@ body {
 <body>
 
 <!-- Chat Button -->
-<button class="bot-toggle" id="bot-toggle" onclick="toggleChat()">
+<button class="bot-toggle" id="bot-toggle" onclick="toggleChat()" aria-label="Open chat">
   💬
 </button>
 
@@ -237,27 +269,30 @@ body {
         <small>Extremo Oeste · Lima</small>
       </div>
     </div>
-    <button class="bot-close" onclick="toggleChat()">×</button>
+    <button class="bot-close" onclick="toggleChat()" aria-label="Close chat">×</button>
   </div>
 
-  <div class="bot-messages" id="bot-messages"></div>
+  <div class="bot-messages" id="bot-messages" role="log" aria-live="polite"></div>
 
   <div class="bot-input-area">
     <input
       id="bot-input"
       type="text"
+      maxlength="300"
       placeholder="Ask about our experiences..."
+      aria-label="Type your message"
       onkeydown="if(event.key==='Enter') botSend()"
     >
-    <button onclick="botSend()">→</button>
+    <button id="bot-send" onclick="botSend()" aria-label="Send message">→</button>
   </div>
 
 </div>
 
 <!-- WhatsApp CTA (shown on hot lead) -->
 <div class="bot-whatsapp-cta" id="bot-whatsapp-cta" style="display:none">
-  <a href="https://wa.me/51999156493?text=Hi,%20I%20would%20like%20to%20book%20an%20experience%20with%20Extremo%20Oeste"
-     target="_blank">
+  <a id="bot-whatsapp-link"
+     href="https://wa.me/51999156493"
+     target="_blank" rel="noopener">
     📲 Book now via WhatsApp
   </a>
 </div>
@@ -265,9 +300,17 @@ body {
 <script>
 
 const WORKER_URL = "https://experience-ai.limaexpiriences.workers.dev/";
+const WHATSAPP_NUMBER = "51999156493";
+const MAX_HISTORY = 10;      // mensajes que se envían al Worker (menos costo y latencia)
+const REQUEST_TIMEOUT = 25000; // ms
+const AUTO_OPEN = true;      // true = el chat se abre solo al entrar; false = solo con el botón
+
+const QUICK_REPLIES = ["History", "Gastronomy", "Nature", "Something custom"];
 
 let botConversation = [];
 let chatOpen = false;
+let greeted = false;
+let sending = false;
 
 function toggleChat() {
   chatOpen = !chatOpen;
@@ -279,9 +322,11 @@ function toggleChat() {
     document.getElementById('bot-whatsapp-cta').style.display = 'none';
   }
 
-  if (chatOpen && botConversation.length === 0) {
+  if (chatOpen && !greeted) {
+    greeted = true;
     setTimeout(() => {
       addBotMessage("Hi! I'm the Experiences Bot 🗺\n\nI can help you discover Lima through the eyes of a local. Which type of experience interests you — history, gastronomy, nature, or something custom?");
+      addQuickReplies();
     }, 400);
   }
 }
@@ -311,30 +356,89 @@ function addTyping() {
   scrollBot();
 }
 
+function addQuickReplies() {
+  const wrap = document.createElement('div');
+  wrap.className = 'bot-chips';
+  wrap.id = 'bot-chips';
+  QUICK_REPLIES.forEach(label => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = label;
+    btn.addEventListener('click', () => sendText(label));
+    wrap.appendChild(btn);
+  });
+  document.getElementById('bot-messages').appendChild(wrap);
+  scrollBot();
+}
+
 function scrollBot() {
   const msgs = document.getElementById('bot-messages');
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-async function botSend() {
+function setSending(state) {
+  sending = state;
+  document.getElementById('bot-input').disabled = state;
+  document.getElementById('bot-send').disabled = state;
+}
+
+// Historial recortado que se envía al Worker (siempre empieza con un mensaje del usuario)
+function recentHistory() {
+  const slice = botConversation.slice(-MAX_HISTORY);
+  while (slice.length && slice[0].role !== 'user') slice.shift();
+  return slice;
+}
+
+// Enlace de WhatsApp con un resumen de lo que pidió el cliente
+function updateWhatsAppLink() {
+  const asked = botConversation
+    .filter(m => m.role === 'user')
+    .slice(-3)
+    .map(m => m.content.slice(0, 120));
+
+  let msg = "Hi, I would like to book an experience with Extremo Oeste.";
+  if (asked.length) {
+    msg += "\n\nWhat I told your bot:\n- " + asked.join("\n- ");
+  }
+  document.getElementById('bot-whatsapp-link').href =
+    `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(msg)}`;
+}
+
+function botSend() {
   const input = document.getElementById('bot-input');
-  const text = input.value.trim();
+  sendText(input.value);
+}
+
+async function sendText(rawText) {
+  if (sending) return;
+  const text = rawText.trim();
   if (!text) return;
+
+  document.getElementById('bot-chips')?.remove();
+  document.getElementById('bot-input').value = "";
+  setSending(true);
 
   addUserMessage(text);
   botConversation.push({ role: "user", content: text });
-  input.value = "";
-
   addTyping();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
   try {
     const response = await fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: botConversation })
+      body: JSON.stringify({ messages: recentHistory() }),
+      signal: controller.signal
     });
 
+    if (!response.ok) throw new Error("HTTP " + response.status);
+
     const data = await response.json();
+    if (typeof data.reply !== "string" || !data.reply.trim()) {
+      throw new Error("Invalid reply");
+    }
 
     document.getElementById('bot-typing')?.remove();
 
@@ -350,14 +454,23 @@ async function botSend() {
 
     // Show WhatsApp CTA button if hot lead or bot triggered it
     if (showWhatsApp || isHotLead) {
+      updateWhatsAppLink();
       document.getElementById('bot-whatsapp-cta').style.display = 'block';
     }
 
   } catch (error) {
     document.getElementById('bot-typing')?.remove();
-    addBotMessage("Sorry, I'm having trouble connecting. Please contact us directly via WhatsApp.");
+    // Quita el mensaje sin respuesta para que el historial siga alternando usuario/bot
+    botConversation.pop();
+    addBotMessage("Sorry, I'm having trouble connecting. Please try again, or contact us directly via WhatsApp.");
+  } finally {
+    clearTimeout(timer);
+    setSending(false);
+    document.getElementById('bot-input').focus();
   }
 }
+
+if (AUTO_OPEN) toggleChat();
 
 </script>
 
